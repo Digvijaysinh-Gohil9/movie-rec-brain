@@ -80,9 +80,47 @@ External APIs
 
 ---
 
-## Deferred (possible Phase 2)
+## Phase 12 — Recommendation Algorithm (next up)
 
-- Director / actor affinity in taste profile
-- "Surprise me" within a specific genre
-- Watch history import from Letterboxd or Netflix CSV
+The current engine scores candidates purely on genre overlap + a small popularity nudge. It works but doesn't use everything we know about the user. Planned improvements:
+
+### 12a — Director & cast affinity
+- When a title is rated, store its top-billed director and cast (from TMDB credits) alongside the rating
+- Extend `taste_profile` with `directorWeights` and `castWeights` (person ID → weighted avg score)
+- Add a cast/director score component to `scorer.ts`
+- Titles starring or directed by people you've liked before get boosted
+
+### 12b — TMDB "similar titles" signal
+- For each rated title with score ≥ 4, fetch `/movie/{id}/similar` or `/tv/{id}/similar`
+- Build a set of "affinity titles" — things TMDB considers similar to your favourites
+- Boost candidates that appear in this set
+- Cache affinity titles in Supabase to avoid re-fetching on every session
+
+### 12c — Anti-recommendations
+- Titles you've rated 1–2 stars reveal what you dislike
+- Use low-rated titles to subtract from genre/director/cast weights rather than just ignoring them
+- This penalises candidates that match your disliked patterns
+
+### 12d — Recency decay tuning
+- Current recency window is binary: < 30 days = 1.5×, older = 1.0×
+- Replace with a smooth exponential decay so very recent ratings count more gradually
+- Expose a "reset taste profile" option in Settings for when preferences have shifted
+
+### 12e — Surprise Me improvement
+- Currently pulls from popularity-sorted discover with no genre filter
+- Add a "Surprise Me within a genre" option
+- Optionally surface titles outside your usual comfort zone (high TMDB rating but low genre overlap)
+
+### Implementation order
+1. 12a (director/cast) — biggest quality improvement, moderate effort
+2. 12c (anti-recommendations) — small change to scorer, high impact
+3. 12b (similar titles) — requires new Supabase table for caching
+4. 12d (recency decay) — pure engine change, no schema changes
+5. 12e (Surprise Me) — UI + engine change
+
+---
+
+## Deferred / Maybe
+
+- Watch history import from Letterboxd or Netflix CSV export
 - Supabase real-time sync (requires enabling table replication in dashboard)
