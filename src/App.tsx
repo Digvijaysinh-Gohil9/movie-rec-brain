@@ -1,4 +1,6 @@
 import { Routes, Route, Navigate, useLocation, Link } from 'react-router-dom'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { AuthPage } from './pages/AuthPage'
 import { HomePage } from './pages/HomePage'
 import { FeedPage } from './pages/FeedPage'
 import { RatePage } from './pages/RatePage'
@@ -6,14 +8,11 @@ import { DetailPage } from './pages/DetailPage'
 import { LibraryPage } from './pages/LibraryPage'
 import { WatchlistPage } from './pages/WatchlistPage'
 import { SettingsPage } from './pages/SettingsPage'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from './db/db'
+import { useWatchlistCount } from './hooks/useDb'
 
 function BottomNav() {
   const { pathname } = useLocation()
-  const watchlistCount = useLiveQuery(() => db.watchlist.count(), [], 0)
-
-  // Hide nav on feed and detail — those pages own their own back nav
+  const watchlistCount = useWatchlistCount()
   const hidden = pathname.startsWith('/feed') || pathname.startsWith('/detail')
   if (hidden) return null
 
@@ -55,7 +54,19 @@ function BottomNav() {
   )
 }
 
-export default function App() {
+function AppRoutes() {
+  const { user, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center">
+        <p className="text-4xl animate-pulse">🎬</p>
+      </div>
+    )
+  }
+
+  if (!user) return <AuthPage />
+
   return (
     <>
       <Routes>
@@ -70,5 +81,13 @@ export default function App() {
       </Routes>
       <BottomNav />
     </>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
   )
 }

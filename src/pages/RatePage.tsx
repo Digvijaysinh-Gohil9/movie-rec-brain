@@ -6,8 +6,7 @@ import { StarRating } from '../components/StarRating'
 import { POSTER_BASE } from '../api/tmdb'
 import type { TMDBSearchResult } from '../api/types'
 import type { StarScore } from '../db/types'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db/db'
+import { useRatingCount } from '../hooks/useDb'
 
 export function RatePage() {
   const navigate = useNavigate()
@@ -16,7 +15,7 @@ export function RatePage() {
   const [pendingScore, setPendingScore] = useState<StarScore | null>(null)
   const [saving, setSaving] = useState(false)
   const { results, loading } = useSearch(query)
-  const ratingCount = useLiveQuery(() => db.ratings.count(), [], 0)
+  const ratingCount = useRatingCount()
 
   async function handleConfirmRating() {
     if (!selected || !pendingScore) return

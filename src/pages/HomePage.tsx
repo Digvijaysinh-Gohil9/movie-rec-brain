@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGenres } from '../hooks/useGenres'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db/db'
+import { useRatingCount } from '../hooks/useDb'
 
 type MediaType = 'movie' | 'tv'
 type Step = 'genre' | 'mode'
@@ -15,7 +14,7 @@ export function HomePage() {
   const [selectedGenreName, setSelectedGenreName] = useState<string>('')
 
   const { genres, loading, error } = useGenres(mediaType)
-  const ratingCount = useLiveQuery(() => db.ratings.count(), [], 0)
+  const ratingCount = useRatingCount()
 
   function handleSurpriseMe() {
     navigate(`/feed?mediaType=${mediaType}&mode=surprise`)

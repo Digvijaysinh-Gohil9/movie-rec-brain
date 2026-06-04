@@ -4,8 +4,7 @@ import { fetchMovieDetail, fetchTVDetail, POSTER_BASE, BACKDROP_BASE } from '../
 import type { TMDBMovieDetail, TMDBTVDetail } from '../api/types'
 import { StarRating } from '../components/StarRating'
 import { saveRating, addToWatchlist, removeFromWatchlist } from '../db/queries'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db/db'
+import { useTitleStatus } from '../hooks/useDb'
 import type { StarScore } from '../db/types'
 
 type Detail = TMDBMovieDetail | TMDBTVDetail
@@ -25,16 +24,8 @@ export function DetailPage() {
   const [pendingScore, setPendingScore] = useState<StarScore | null>(null)
   const [showRateSheet, setShowRateSheet] = useState(false)
 
-  // Live rating + watchlist status from DB
-  const existingRating = useLiveQuery(
-    () => db.ratings.get(`${mediaType}:${id}`),
-    [mediaType, id]
-  )
-  const onWatchlist = useLiveQuery(
-    () => db.watchlist.get(`${mediaType}:${id}`).then((e) => !!e),
-    [mediaType, id],
-    false
-  )
+  // Live rating + watchlist status from Supabase
+  const { onWatchlist, rating: existingRating } = useTitleStatus(mediaType, id)
   const [watchlistLoading, setWatchlistLoading] = useState(false)
 
   async function handleWatchlistToggle() {
