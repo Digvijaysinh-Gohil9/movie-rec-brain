@@ -17,7 +17,8 @@
       "Bash(git push *)",
       "Bash(ls ~/.ssh/id_*.pub 2>/dev/null && echo \"KEY_EXISTS\" || echo \"NO_KEY\")",
       "Bash(gh auth *)",
-      "Bash(pkill -f \"vite\" 2>/dev/null; sleep 2 && npm run dev -- --host --port 5174 > /tmp/vite.log 2>&1 & sleep 4 && curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5174)"
+      "Bash(pkill -f \"vite\" 2>/dev/null; sleep 2 && npm run dev -- --host --port 5174 > /tmp/vite.log 2>&1 & sleep 4 && curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5174)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

@@ -3,21 +3,25 @@ import { supabase } from '../lib/supabase'
 import { getAllRatings, getAllWatchlist } from '../db/queries'
 import type { Rating, WatchlistEntry } from '../db/types'
 
-/** Live count of rated titles — re-runs when ratings table changes */
+// ─── Helper: fetch count from a table ────────────────────────────────────────
+async function fetchCount(table: string): Promise<number> {
+  const { count } = await supabase
+    .from(table)
+    .select('id', { count: 'exact', head: true })
+  return count ?? 0
+}
+
+// ─── Rating count ─────────────────────────────────────────────────────────────
 export function useRatingCount(): number {
   const [count, setCount] = useState(0)
 
   useEffect(() => {
-    // Initial fetch
-    supabase.from('ratings').select('id', { count: 'exact', head: true })
-      .then(({ count: c }) => setCount(c ?? 0))
+    void fetchCount('ratings').then(setCount)
 
-    // Real-time subscription
     const channel = supabase
       .channel('ratings-count')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ratings' },
-        () => supabase.from('ratings').select('id', { count: 'exact', head: true })
-          .then(({ count: c }) => setCount(c ?? 0))
+        () => void fetchCount('ratings').then(setCount)
       )
       .subscribe()
 
@@ -27,19 +31,17 @@ export function useRatingCount(): number {
   return count
 }
 
-/** Live count of watchlist entries */
+// ─── Watchlist count ──────────────────────────────────────────────────────────
 export function useWatchlistCount(): number {
   const [count, setCount] = useState(0)
 
   useEffect(() => {
-    supabase.from('watchlist').select('id', { count: 'exact', head: true })
-      .then(({ count: c }) => setCount(c ?? 0))
+    void fetchCount('watchlist').then(setCount)
 
     const channel = supabase
       .channel('watchlist-count')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'watchlist' },
-        () => supabase.from('watchlist').select('id', { count: 'exact', head: true })
-          .then(({ count: c }) => setCount(c ?? 0))
+        () => void fetchCount('watchlist').then(setCount)
       )
       .subscribe()
 
@@ -49,17 +51,17 @@ export function useWatchlistCount(): number {
   return count
 }
 
-/** Live list of all ratings, newest first */
+// ─── All ratings ──────────────────────────────────────────────────────────────
 export function useRatings(): Rating[] {
   const [ratings, setRatings] = useState<Rating[]>([])
 
   useEffect(() => {
-    getAllRatings().then(setRatings)
+    void getAllRatings().then(setRatings)
 
     const channel = supabase
       .channel('ratings-list')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ratings' },
-        () => getAllRatings().then(setRatings)
+        () => void getAllRatings().then(setRatings)
       )
       .subscribe()
 
@@ -69,17 +71,17 @@ export function useRatings(): Rating[] {
   return ratings
 }
 
-/** Live list of watchlist, newest first */
+// ─── All watchlist ────────────────────────────────────────────────────────────
 export function useWatchlist(): WatchlistEntry[] {
   const [list, setList] = useState<WatchlistEntry[]>([])
 
   useEffect(() => {
-    getAllWatchlist().then(setList)
+    void getAllWatchlist().then(setList)
 
     const channel = supabase
       .channel('watchlist-list')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'watchlist' },
-        () => getAllWatchlist().then(setList)
+        () => void getAllWatchlist().then(setList)
       )
       .subscribe()
 
@@ -89,7 +91,7 @@ export function useWatchlist(): WatchlistEntry[] {
   return list
 }
 
-/** Live watchlist/rating status for a specific title */
+// ─── Single title status (watchlist + rating) ─────────────────────────────────
 export function useTitleStatus(mediaType: string | undefined, tmdbId: string | undefined) {
   const [onWatchlist, setOnWatchlist] = useState(false)
   const [rating, setRating] = useState<Rating | null>(null)

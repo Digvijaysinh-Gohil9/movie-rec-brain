@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useRatingCount, useWatchlistCount } from '../hooks/useDb'
 import { supabase } from '../lib/supabase'
-import { saveRating, addToWatchlist } from '../db/queries'
+import { bulkImport } from '../db/queries'
 import type { Rating, WatchlistEntry } from '../db/types'
 
 interface BackupFile {
@@ -67,15 +67,22 @@ export function SettingsPage() {
         setImportResult({ ok: false, msg: 'Invalid backup file.' })
         return
       }
-      // Import ratings
-      for (const r of data.ratings) {
-        await saveRating({ tmdbId: r.tmdbId, mediaType: r.mediaType, title: r.title, posterPath: r.posterPath, genreIds: r.genreIds, score: r.score })
-      }
-      // Import watchlist
-      for (const w of data.watchlist) {
-        await addToWatchlist({ tmdbId: w.tmdbId, mediaType: w.mediaType, title: w.title, posterPath: w.posterPath, overview: w.overview, releaseYear: w.releaseYear, voteAverage: w.voteAverage, genreIds: w.genreIds })
-      }
-      setImportResult({ ok: true, msg: `Imported ${data.ratings.length} ratings and ${data.watchlist.length} watchlist titles.` })
+
+      // Normalise: ensure each rating has a compound id (old backups may lack it)
+      const ratings: Rating[] = data.ratings.map((r) => ({
+        ...r,
+        id: r.id ?? `${r.mediaType}:${r.tmdbId}`,
+      }))
+      const watchlist: WatchlistEntry[] = data.watchlist.map((w) => ({
+        ...w,
+        id: w.id ?? `${w.mediaType}:${w.tmdbId}`,
+        addedAt: w.addedAt ?? new Date().toISOString(),
+      }))
+
+      // Single bulk insert — one profile recompute at the end
+      await bulkImport(ratings, watchlist)
+
+      setImportResult({ ok: true, msg: `Imported ${ratings.length} ratings and ${watchlist.length} watchlist titles.` })
     } catch (err) {
       setImportResult({ ok: false, msg: err instanceof Error ? err.message : 'Import failed.' })
     } finally {

@@ -123,6 +123,56 @@ export async function getTasteProfile(): Promise<TasteProfile | undefined> {
   return { id: 1, genreWeights, updatedAt: data['updated_at'] as string }
 }
 
+// ─── Bulk import (for backup restore — single profile recompute at end) ───────
+
+export async function bulkImport(ratings: Rating[], watchlistEntries: WatchlistEntry[]): Promise<void> {
+  // Bulk upsert ratings
+  if (ratings.length > 0) {
+    const rows = ratings.map((r) => ({
+      id:          r.id,
+      tmdb_id:     r.tmdbId,
+      media_type:  r.mediaType,
+      title:       r.title,
+      poster_path: r.posterPath,
+      genre_ids:   r.genreIds,
+      score:       r.score,
+      rated_at:    r.ratedAt,
+    }))
+    const { error } = await supabase.from('ratings').upsert(rows)
+    if (error) throw error
+
+    // Also mark all as seen in one shot
+    const seenRows = ratings.map((r) => ({ id: r.id }))
+    await supabase.from('seen').upsert(seenRows)
+
+    // Recompute profile once
+    const all = await getAllRatings()
+    const profile = buildProfile(all)
+    await supabase.from('taste_profile').upsert({
+      genre_weights: profile.genreWeights,
+      updated_at:    profile.updatedAt,
+    })
+  }
+
+  // Bulk upsert watchlist
+  if (watchlistEntries.length > 0) {
+    const rows = watchlistEntries.map((w) => ({
+      id:           w.id,
+      tmdb_id:      w.tmdbId,
+      media_type:   w.mediaType,
+      title:        w.title,
+      poster_path:  w.posterPath,
+      overview:     w.overview,
+      release_year: w.releaseYear,
+      vote_average: w.voteAverage,
+      genre_ids:    w.genreIds,
+      added_at:     w.addedAt,
+    }))
+    const { error } = await supabase.from('watchlist').upsert(rows)
+    if (error) throw error
+  }
+}
+
 // ─── Watchlist ────────────────────────────────────────────────────────────────
 
 export async function addToWatchlist(
