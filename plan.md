@@ -1,183 +1,88 @@
 # Movie Recommender — Build Plan
 
-## Guiding Principles
+## Status
 
-- Work one phase at a time; each phase produces something runnable
-- Never move to the next phase until the current one looks and works correctly
-- Paste `instructions.md` as context at the start of each session
+All phases complete and deployed at `movie-rec-brain.vercel.app`.
 
 ---
 
-## Phase 0 — Project Scaffold
+## What was built
 
-**Goal:** A running Vite + React + TS app with Tailwind, Dexie, and TMDB wired up.
+### Phase 0 — Scaffold
+Vite + React + TypeScript + Tailwind CSS. PWA manifest configured. TMDB API client wired up.
 
-- [ ] `npm create vite@latest` with React + TypeScript template
-- [ ] Install dependencies:
-  - `tailwindcss`, `@tailwindcss/vite`
-  - `dexie`, `dexie-react-hooks`
-  - `vite-plugin-pwa`
-- [ ] Configure Tailwind (`tailwind.config.ts`, import in `index.css`)
-- [ ] Create `.env` with `VITE_TMDB_API_KEY` placeholder; add to `.gitignore`
-- [ ] Write `api/tmdb.ts` — typed TMDB client (fetch wrapper, base URL, auth header)
-- [ ] Smoke test: call `GET /genre/movie/list` and log result in `App.tsx`
-- [ ] Set up `vite-plugin-pwa` with manifest (name, icons, `display: standalone`)
+### Phase 1 — Database layer
+Supabase tables: `ratings`, `watchlist`, `seen`, `taste_profile`.
+Row-level security policies so each user only sees their own data.
+TypeScript types for all entities.
 
-**Done when:** `npm run dev` shows a blank page with no console errors and genre list logs in the console.
+### Phase 2 — Rating flow
+Search any movie or TV show (TMDB `/search/multi`), tap it, give it 1–5 stars.
+Saves to Supabase and recomputes the taste profile.
 
----
+### Phase 3 — Taste profile engine
+`engine/profileBuilder.ts` — recency-weighted genre scoring from all ratings.
+`engine/scorer.ts` — scores TMDB candidates against your profile.
+Both are pure TypeScript functions, run in the browser.
 
-## Phase 1 — Dexie Schema + Types
+### Phase 4–5 — Home screen + recommendation feed
+- Genre picker (Movies / TV toggle)
+- Mode selector: Something New → unseen titles, Rewatch → your 4+ star titles in that genre
+- 🎲 Surprise Me → random pick from full catalogue, scored against your taste
+- Feed shows top 10 ranked results with dismiss button
 
-**Goal:** Database layer in place; all TypeScript types defined.
+### Phase 6 — Detail page
+Backdrop, poster, tagline, genres, synopsis, cast row, trailer link (YouTube).
+"I've watched this — Rate it" CTA pinned at the bottom.
+Add to Watchlist button if not yet rated.
 
-- [ ] Define types in `db/types.ts`:
-  - `Rating`, `TasteProfile`, `SeenId`
-- [ ] Write `db/db.ts` — Dexie class with all three tables, version 1 schema
-- [ ] Write `db/queries.ts` — helper functions:
-  - `saveRating(rating)` — upsert + trigger profile recompute
-  - `deleteRating(id)`
-  - `getAllRatings()`
-  - `isAlreadySeen(id) → boolean`
-  - `getTasteProfile()`
-  - `saveTasteProfile(profile)`
-- [ ] Write typed TMDB response models in `api/types.ts` (Movie, TVShow, SearchResult, Genre)
+### Phase 7 — Library
+All rated titles with filter by media type and minimum score.
+Tap to edit rating or delete.
 
-**Done when:** Dexie opens without errors; can write and read a dummy rating from the browser console.
+### Phase 8 — Watchlist
+Save titles someone recommended before you've watched them.
+Tap ✓ → rate it → moves to library automatically.
+Search-to-add sheet with TMDB lookup.
 
----
+### Phase 9 — Auth + cloud sync
+Supabase Auth (email/password, email confirmation disabled).
+All data scoped to the logged-in user via RLS.
+Works across devices — sign in anywhere and your ratings are there.
+Sign out in Settings.
 
-## Phase 2 — Rating Flow (Onboarding Core)
+### Phase 10 — Settings + backup
+Export ratings + watchlist as JSON (iCloud/Files backup).
+Import from JSON — bulk upsert, single profile recompute.
+Rated count and watchlist count shown on the page.
 
-**Goal:** User can search for a title and rate it 1–5 stars.
-
-- [ ] `pages/RatePage.tsx` — search input + results list
-- [ ] `hooks/useSearch.ts` — debounced TMDB `/search/multi` with typed results
-- [ ] `components/SearchResultCard.tsx` — poster thumbnail, title, year, media type badge
-- [ ] `components/StarRating.tsx` — 1–5 star tap input
-- [ ] On rating confirm: write to `ratings` + `seenIds` tables
-- [ ] Show rated count on the page ("You've rated X titles")
-
-**Done when:** Can search "Inception", tap it, give it 4 stars, and see the count increment. Rating persists on page refresh.
-
----
-
-## Phase 3 — Taste Profile Engine
-
-**Goal:** Every rating (add/edit/delete) recomputes and persists the taste profile.
-
-- [ ] Write `engine/profileBuilder.ts`:
-  - `buildProfile(ratings: Rating[]) → TasteProfile`
-  - Genre weights = recency-weighted average score per genre
-  - Recency weight: ratings in last 30 days get 1.5×, older get 1.0×
-- [ ] Hook `saveRating` / `deleteRating` to call `buildProfile` and persist result
-- [ ] Write `engine/scorer.ts`:
-  - `scoreCandidate(candidate, profile) → number`
-  - Formula: genre overlap weighted sum + 0.1 × (tmdbVoteAverage / 10)
-- [ ] Unit-test scorer logic with a few hardcoded cases (plain TS, no test framework needed — just a `testScorer.ts` you can run with `npx tsx`)
-
-**Done when:** After rating 5+ titles, `getTasteProfile()` from the console shows non-zero genre weights that reflect what you rated highly.
+### Phase 11 — Deploy
+`vercel.json` with SPA rewrites.
+Three env vars in Vercel dashboard: `VITE_TMDB_API_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+GitHub → Vercel auto-deploy on every push to main.
 
 ---
 
-## Phase 4 — Home Screen + Genre Picker
+## Architecture
 
-**Goal:** App entry point — genre grid that triggers recommendation fetch.
+```
+Browser
+├── React UI (Vite + Tailwind)
+├── Recommendation engine (pure TS, runs client-side)
+└── Supabase JS client
+      ├── Auth (session management)
+      ├── ratings / watchlist / seen / taste_profile tables
+      └── RLS: each user sees only their own rows
 
-- [ ] `pages/HomePage.tsx` — Movies / TV toggle + genre chip grid
-- [ ] `hooks/useGenres.ts` — fetches and caches genre lists from TMDB (in-memory, one fetch per session)
-- [ ] Tap a genre → navigate to recommendation feed with genre ID in route params
-- [ ] Show rated-title count on home screen as a subtle badge
-
-**Done when:** Can tap "Action" and navigate (feed can be a placeholder for now).
-
----
-
-## Phase 5 — Recommendation Feed
-
-**Goal:** Genre tap produces a ranked, personalised list of 10 titles.
-
-- [ ] `hooks/useRecommendations.ts`:
-  - Fetch 3 pages of `/discover/movie` or `/discover/tv` for the selected genre
-  - Filter out `seenIds`
-  - Score each with `scorer.ts`
-  - Return top 10 sorted descending
-- [ ] `pages/FeedPage.tsx` — scrollable list of recommendation cards
-- [ ] `components/RecommendationCard.tsx` — poster, title, year, TMDB rating, match indicator
-- [ ] "Not interested" button → add to `seenIds`, remove from list without refetch
-- [ ] Empty state: if < 5 ratings, show unscored TMDB top picks with a "Rate more titles for personalised picks" banner
-
-**Done when:** With 10+ ratings, the feed shows titles that feel relevant to the selected genre and your taste.
+External APIs
+└── TMDB — genre lists, discover, search, detail, trailers
+```
 
 ---
 
-## Phase 6 — Detail Sheet + Library
+## Deferred (possible Phase 2)
 
-**Goal:** Tap a card for details; view and manage everything you've rated.
-
-- [ ] `components/DetailSheet.tsx` — bottom sheet overlay:
-  - Full poster, synopsis, cast (top 5), TMDB score, runtime/seasons
-  - Trailer deep-link (YouTube via TMDB videos endpoint)
-  - "I've watched this" → opens star rating
-- [ ] `pages/LibraryPage.tsx` — list of all rated titles
-  - Filter: Movies / TV / All, score filter (≥ 3 stars etc.)
-  - Tap to edit or delete rating
-
-**Done when:** Can tap any recommendation card, read the synopsis, and update a rating from the library.
-
----
-
-## Phase 7 — Taste Profile Snapshot
-
-**Goal:** Show the user why they're getting certain recommendations.
-
-- [ ] `pages/ProfilePage.tsx`:
-  - Top 5 genres by weight with a simple bar visualisation (plain CSS, no chart lib needed)
-  - Average score across all ratings
-  - Total rated count (movies vs TV breakdown)
-
-**Done when:** Profile page reflects what you'd expect given your ratings.
-
----
-
-## Phase 8 — Backup & Restore
-
-**Goal:** Ratings are durable across browser data clears.
-
-- [ ] Export: serialize all `ratings` rows to JSON → trigger browser download
-- [ ] Import: file picker → parse JSON → validate schema → upsert into Dexie → recompute profile
-- [ ] Surface in a Settings sheet accessible from the home screen
-
-**Done when:** Export a JSON, clear IndexedDB in DevTools, import the JSON, ratings are fully restored.
-
----
-
-## Phase 9 — Polish + PWA Install
-
-**Goal:** App is installable and feels native.
-
-- [ ] Review all empty states, loading skeletons, error boundaries
-- [ ] Confirm PWA manifest: name, short_name, icons (192 + 512), theme_color, `display: standalone`
-- [ ] Test "Add to Home Screen" on iPhone
-- [ ] Verify offline mode: rated library and profile page work without network; feed shows graceful error
-- [ ] Audit Tailwind for consistent spacing, font sizes, touch targets (min 44px)
-
----
-
-## Phase 10 — Deploy
-
-**Goal:** Live on the internet, accessible from iPhone.
-
-- [ ] `npm run build` — confirm no TS errors, no console warnings
-- [ ] Deploy `dist/` to Vercel or Netlify
-- [ ] Set `VITE_TMDB_API_KEY` in hosting dashboard environment variables
-- [ ] Open on iPhone, install to home screen, run through full flow
-
----
-
-## Prompt Strategy (same as finance app)
-
-- Paste `instructions.md` once at the start of each session
-- Work one phase at a time — "now implement Phase 2: Rating Flow"
-- Don't ask for multiple phases at once
-- After each phase, test in browser before moving on
+- Director / actor affinity in taste profile
+- "Surprise me" within a specific genre
+- Watch history import from Letterboxd or Netflix CSV
+- Supabase real-time sync (requires enabling table replication in dashboard)

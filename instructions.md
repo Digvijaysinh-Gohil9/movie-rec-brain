@@ -1,186 +1,160 @@
-# Movie & Show Recommender — Build Instructions
+# Movie Recommender — Build Instructions
 
 ## Project Goal
 
-Build a **personal content recommendation PWA** that learns your taste from movies and shows you've already rated, then surfaces titles you'll actually want to watch. Genre-first UX: open the app, pick a genre, get a short ranked list tailored to you. No backend, no accounts — ratings live on-device; content comes from TMDB.
-
----
-
-## Stack & Constraints
-
-- **Vite + React + TypeScript** — same scaffold as the personal finance app
-- **Tailwind CSS** for styling
-- **`vite-plugin-pwa`** — installable to home screen, works offline for browsing past ratings (content fetches need network)
-- **Dexie.js** (IndexedDB) — stores all user ratings and cached taste profile on-device
-- **TMDB API** — called directly from the browser (no proxy server needed); key stored in `VITE_TMDB_API_KEY` env var
-- **Mobile-first layout** — optimized for iPhone; touch-friendly tap targets
-- **Static site deploy** — no server; same deployment approach as finance app (Vercel or Netlify)
-
----
-
-## Data Model (Dexie tables)
-
-**`ratings`**
-- `id` — TMDB content ID (string, e.g. `"movie:550"` or `"tv:1396"`)
-- `tmdbId` — numeric TMDB ID
-- `mediaType` — `'movie' | 'tv'`
-- `title` — cached display title
-- `posterPath` — cached TMDB poster path
-- `genres` — `number[]` (TMDB genre IDs)
-- `score` — `1 | 2 | 3 | 4 | 5` (user rating)
-- `ratedAt` — ISO timestamp
-
-**`tasteProfile`** (single row, recomputed on every new rating)
-- `id` — always `1`
-- `genreWeights` — `Record<number, number>` — genre ID → weighted avg score
-- `updatedAt` — ISO timestamp
-
-**`seenIds`** (fast lookup set — never recommend something already rated)
-- `id` — same compound key as `ratings.id`
-
----
-
-## TMDB Integration
-
-- Base URL: `https://api.themoviedb.org/3`
-- Key header: `Authorization: Bearer <VITE_TMDB_API_KEY>` (use read access token, not the v3 key)
-- Endpoints used:
-  - `GET /genre/movie/list` and `GET /genre/tv/list` — genre lists
-  - `GET /discover/movie` and `GET /discover/tv` — candidate pool for recommendations (filter by genre, sort by vote_average)
-  - `GET /search/multi` — search bar when rating watched titles
-  - `GET /movie/{id}` and `GET /tv/{id}` — detail fetch for richer metadata
-- Cache genre lists in memory (they rarely change); do not cache discover results
-
----
-
-## Recommendation Logic (runs in browser, pure TypeScript)
-
-**Taste profile** is a map of `genreId → weightedScore`:
-- Each rated title contributes its genres at the user's score, weighted by recency (newer ratings count more)
-- Recompute and persist to Dexie after every rating change
-
-**Scoring a candidate**:
-```
-candidateScore = Σ (genreWeight[g] × genreOverlapFactor) for each genre g in candidate
-               + 0.1 × (tmdbVoteAverage / 10)   ← small popularity nudge
-```
-- Filter out anything already in `seenIds`
-- Sort descending by candidateScore, return top 10
-
-**Genre filter flow**:
-1. User picks a genre
-2. Fetch `discover` candidates for that genre from TMDB (page 1–3, sorted by vote_average)
-3. Score each candidate against taste profile
-4. Display top 10, ranked
+A personal content recommendation app. You rate movies and shows you've watched, pick a genre, and get a ranked list of what to watch next. Genre-first UX: open the app, pick a genre (or hit Surprise Me), get recommendations based on your own taste.
 
 ---
 
 ## App Entry Flow
 
 ```
-┌─────────────────────────────────┐
-│         OPEN APP                │
-│                                 │
-│  [🎲 Surprise Me]  ← skips all │
-│                                 │
-│  Pick a Genre:                  │
-│  [ Action ] [ Comedy ] [ Drama ]│
-│  [ Horror ] [ Sci-Fi ] [ ... ]  │
-│                                 │
-│  Movies ○  ●  TV Shows          │
-└────────────┬────────────────────┘
-             │ (genre selected)
-             ▼
-┌─────────────────────────────────┐
-│  What are you in the mood for?  │
-│                                 │
-│  [ 🆕 Something New ]           │
-│  [ 🔁 Rewatch ]                 │
-└────────────┬────────────────────┘
-             │
-             ▼
-     Recommendation Feed
+Open app → Sign In / Sign Up
+             ↓
+     Home screen
+     ┌─────────────────────────────────┐
+     │  [🎲 Surprise Me]               │
+     │                                 │
+     │  Movies ○  ●  TV Shows          │
+     │                                 │
+     │  [ Action ] [ Comedy ] [ Drama ]│
+     │  [ Horror ] [ Sci-Fi ] [ ... ]  │
+     └────────────┬────────────────────┘
+                  │ (genre selected)
+                  ▓
+     ┌─────────────────────────────────┐
+     │  What are you in the mood for?  │
+     │  [ 🆕 Something New ]           │
+     │  [ 🔁 Rewatch ]                 │
+     └─────────────────────────────────┘
+                  ↓
+         Recommendation Feed
 ```
 
-- **Surprise Me** — ignores genre and mode; picks randomly from the full TMDB catalogue scored against taste profile; shows 1 bold pick with a "Not this" shuffle button
-- **Something New** — candidates filtered to titles NOT in `seenIds`
-- **Rewatch** — candidates filtered to titles IN `ratings` with score ≥ 4 (your favourites); sorted by score then recency
+- **Surprise Me** — ignores genre, picks randomly from full TMDB catalogue scored against taste profile. Shows one bold pick with a shuffle button.
+- **Something New** — candidates filtered to titles not in `seen`
+- **Rewatch** — titles in `ratings` with score ≥ 4, sorted by score
 
 ---
 
-## Core Features
+## Stack
 
-### 1. Rate Watched Titles (Onboarding + Ongoing)
-- Search bar backed by TMDB `/search/multi`
-- Tap a result → star rating overlay (1–5)
-- Confirm saves to `ratings` table and updates `tasteProfile`
-- Show count of rated titles on home screen (encourages critical mass of ~20+ ratings)
-
-### 2. Genre Picker Home Screen
-- Grid of genre chips (Movies | TV toggle)
-- Tap a genre → recommendation feed
-
-### 3. Recommendation Feed
-- Ranked list of up to 10 titles
-- Each card: poster, title, year, match score indicator, TMDB rating
-- Tap card → detail sheet (synopsis, cast, trailer link)
-- "Not interested" button → adds to `seenIds` without a score
-
-### 4. Rated Titles Library
-- Scrollable list of everything you've rated
-- Edit or delete a rating
-- Filter by media type and score
-
-### 5. Taste Profile Snapshot
-- Simple breakdown: your top 5 genres by weight, avg score
-- Helps user understand why they're getting certain recommendations
-
-### 6. Backup & Restore
-- Export ratings to JSON (save to iCloud Drive)
-- Import from JSON to restore
-- Validate schema on import
-
----
-
-## Quality Requirements
-
-- **No `any`** — TypeScript types for every entity and API response
-- **Dexie hooks** (`dexie-react-hooks` `useLiveQuery`) for reactive UI
-- **TMDB rate limit awareness** — debounce search input (300 ms); don't hammer discover on every keystroke
-- Handle empty states: zero ratings (prompt to rate), genre with no scoreable candidates (show top TMDB picks without personalisation, labelled as such)
-- Clean folder structure:
-  - `db/` — Dexie schema, types, queries
-  - `api/` — TMDB client and typed response models
-  - `engine/` — taste profile builder + candidate scorer
-  - `components/`
-  - `hooks/`
-  - `pages/`
+- **Vite + React + TypeScript** — build tooling and UI
+- **Tailwind CSS v4** — styling (`@import "tailwindcss"` syntax, `@tailwindcss/vite` plugin)
+- **`vite-plugin-pwa`** — installable to home screen, offline shell
+- **Supabase** — auth (email/password) + Postgres database (ratings, watchlist, seen, taste_profile)
+- **TMDB API** — all movie and TV data, called directly from the browser
+- **Vercel** — static site deploy with `vercel.json` SPA rewrites
 
 ---
 
 ## Environment Variables
 
 ```
-VITE_TMDB_API_KEY=your_tmdb_read_access_token_here
+VITE_TMDB_API_KEY=your_tmdb_read_access_token
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-Add `.env` to `.gitignore`. Never commit the key.
+Never commit `.env`. Set the same three vars in Vercel → Settings → Environment Variables.
 
 ---
 
-## Deployment
+## Supabase Setup
 
-Same approach as personal finance app — static site, no server required. Steps:
-1. `npm run build` → `dist/` folder
-2. Deploy `dist/` to Vercel or Netlify (drag-and-drop or CLI)
-3. Set `VITE_TMDB_API_KEY` as an environment variable in the hosting dashboard
-4. Done — no backend, no database to manage
+Run `supabase/migration.sql` in the Supabase SQL editor once to create all tables with RLS policies.
+
+In Supabase → Authentication → Providers → Email: **disable "Confirm email"** so sign-up works without email verification.
 
 ---
 
-## Deferred (Phase 2)
+## Data Model
 
-- **Collaborative signals** — pull in TMDB "similar titles" as an additional scoring signal
-- **Director / actor affinity** — extend taste profile beyond genres to specific people
-- **"Surprise me" mode** — intentionally surface outside comfort zone with high TMDB rating
-- **Watch history import** — parse Letterboxd or Netflix export CSV to bulk-seed ratings
+**`ratings`** — `id` (compound: "movie:550"), `user_id`, `tmdb_id`, `media_type`, `title`, `poster_path`, `genre_ids[]`, `score` (1–5), `rated_at`
+
+**`watchlist`** — `id`, `user_id`, `tmdb_id`, `media_type`, `title`, `poster_path`, `overview`, `release_year`, `vote_average`, `genre_ids[]`, `added_at`
+
+**`seen`** — `id`, `user_id` — fast lookup set; includes rated titles and dismissed recommendations
+
+**`taste_profile`** — `user_id` (PK), `genre_weights` (JSONB: genre_id → weighted avg score), `updated_at`
+
+All tables use `default auth.uid()` for `user_id` and RLS policies that enforce `auth.uid() = user_id`.
+
+---
+
+## TMDB Integration
+
+- Base URL: `https://api.themoviedb.org/3`
+- Auth: `Authorization: Bearer <VITE_TMDB_API_KEY>` (read access token, not v3 key)
+- Endpoints used:
+  - `/genre/movie/list`, `/genre/tv/list` — cached in memory per session
+  - `/discover/movie`, `/discover/tv` — candidate pool (3 pages per request)
+  - `/search/multi` — search bar, debounced 300ms
+  - `/movie/{id}`, `/tv/{id}` — detail page with `append_to_response=credits,videos`
+
+---
+
+## Recommendation Engine
+
+**Taste profile** (`engine/profileBuilder.ts`):
+- Recency weight: ratings < 30 days old count 1.5×
+- `genreWeights[genreId] = weightedScoreSum / weightSum` across all rated titles
+
+**Scoring** (`engine/scorer.ts`):
+```
+score = Σ genreWeight[g] for each shared genre
+      + 0.1 × (voteAverage / 10)
+```
+Filter `seen` ids, sort descending, return top 10. Both functions are pure TypeScript — no network calls.
+
+---
+
+## Features
+
+1. **Sign in / Sign up** — email + password via Supabase Auth
+2. **Rate Titles** — search TMDB, tap, star rating (1–5), saves to Supabase + recomputes profile
+3. **Home screen** — genre grid, Movies/TV toggle, Surprise Me
+4. **Mode selector** — Something New or Rewatch after picking a genre
+5. **Recommendation Feed** — ranked cards, dismiss button, empty states
+6. **Detail Page** — backdrop, poster, genres, synopsis, cast, trailer link, rate/watchlist CTA
+7. **Library** — all rated titles, filter by type and score, edit or delete ratings
+8. **Watchlist** — save titles to watch later, mark watched → rate → moves to library
+9. **Settings** — export/import JSON backup, sign out, rated/watchlist counts
+
+---
+
+## Folder Structure
+
+```
+src/
+├── api/          TMDB client + response types
+├── contexts/     AuthContext (Supabase session)
+├── db/           Supabase queries + TypeScript types
+├── engine/       profileBuilder + scorer (pure functions)
+├── hooks/        useGenres, useSearch, useRecommendations, useDb
+├── lib/          supabase.ts (client init)
+├── pages/        HomePage, FeedPage, RatePage, DetailPage,
+│                 LibraryPage, WatchlistPage, SettingsPage, AuthPage
+└── components/   StarRating, RecommendationCard
+supabase/
+└── migration.sql
+vercel.json       SPA rewrites (all routes → index.html)
+```
+
+---
+
+## Deploy Checklist
+
+- [ ] Run `supabase/migration.sql` in Supabase SQL editor
+- [ ] Disable email confirmation in Supabase Auth settings
+- [ ] Push to GitHub
+- [ ] Import repo in Vercel, set all 3 env vars before first deploy
+- [ ] Verify at production URL — sign up, import backup JSON, check recommendations
+
+---
+
+## Prompt Strategy
+
+- Paste this file as context once at the start of each session
+- Work one feature at a time, test before moving on
+- Check `plan.md` for what's done and what's deferred
